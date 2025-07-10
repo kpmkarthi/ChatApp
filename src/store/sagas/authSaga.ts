@@ -1,5 +1,10 @@
-import { takeEvery, call, put, delay } from 'redux-saga/effects';
-import { PayloadAction } from '@reduxjs/toolkit';
+import { call, put, takeLatest } from 'redux-saga/effects';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+} from 'firebase/auth';
+import { ref, set, get } from 'firebase/database';
+
 import {
   loginRequest,
   loginSuccess,
@@ -8,71 +13,146 @@ import {
   registerSuccess,
   registerFailure,
 } from '../slices/authSlice';
+import { auth, database } from '../../config/firebase';
 
-// Mock API calls
-function* mockLoginAPI(username: string, password: string) {
-  yield delay(1000); // Simulate network delay
-
-  // Mock validation
-  if (username === 'test' && password === 'test') {
-    return {
-      id: '1',
-      username: 'test',
-      email: 'test@example.com',
-    };
+function* handleRegister(action: ReturnType<typeof registerRequest>) {
+  {
+    console.log('pppp');
   }
-
-  throw new Error('Invalid credentials');
-}
-
-function* mockRegisterAPI(username: string, email: string, password: string) {
-  yield delay(1000); // Simulate network delay
-
-  // Mock validation
-  if (username.length < 3) {
-    throw new Error('Username must be at least 3 characters');
-  }
-
-  if (!email.includes('@')) {
-    throw new Error('Invalid email format');
-  }
-
-  if (password.length < 6) {
-    throw new Error('Password must be at least 6 characters');
-  }
-
-  return {
-    id: Date.now().toString(),
-    username,
-    email,
-  };
-}
-
-function* handleLogin(
-  action: PayloadAction<{ username: string; password: string }>,
-) {
   try {
-    const { username, password } = action.payload;
-    const user = yield call(mockLoginAPI, username, password);
-    yield put(loginSuccess(user));
-  } catch (error) {
+    const { email, password, username } = action.payload;
+    const userCredential = yield call(
+      createUserWithEmailAndPassword,
+      auth,
+      email,
+      password,
+    );
+
+    const user = userCredential.user;
+
+    // Save user info to Realtime Database
+    yield call(set, ref(database, `users/${user.uid}`), {
+      username,
+      email,
+      createdAt: new Date().toISOString(),
+    });
+
+    yield put(registerSuccess());
+  } catch (error: any) {
+    console.log('Register error:', error);
+    yield put(registerFailure(error.message));
+  }
+}
+console.log('oer');
+
+function* handleLogin(action: ReturnType<typeof loginRequest>) {
+  try {
+    const { email, password } = action.payload;
+    const userCredential = yield call(
+      signInWithEmailAndPassword,
+      auth,
+      email,
+      password,
+    );
+
+    const user = userCredential.user;
+
+    // Optionally fetch user profile from RTDB
+    const snapshot = yield call(get, ref(database, `users/${user.uid}`));
+    const userProfile = snapshot.exists() ? snapshot.val() : {};
+
+    yield put(loginSuccess({ user, profile: userProfile }));
+  } catch (error: any) {
+    console.log('Login error:', error);
     yield put(loginFailure(error.message));
   }
 }
 
-function* handleRegister(
-  action: PayloadAction<{ username: string; email: string; password: string }>,
-) {
-  try {
-    const { username, email, password } = action.payload;
-    const user = yield call(mockRegisterAPI, username, email, password);
-    yield put(registerSuccess(user));
-  } catch (error) {
-    yield put(registerFailure(error.message));
-  }
+export function* authSaga() {
+  yield takeLatest(registerRequest.type, handleRegister);
+  yield takeLatest(loginRequest.type, handleLogin);
 }
 
-export function* authSaga() {
-  yield takeEvery(loginRequest.type, handleLogin);
-  yield takeEvery(registerRequest.type, handleRegister);
-}
+// import { call, put, takeLatest } from 'redux-saga/effects';
+// import {
+//   createUserWithEmailAndPassword,
+//   signInWithEmailAndPassword,
+// } from 'firebase/auth';
+// import { ref, set, get } from 'firebase/database';
+// import {
+//   registerRequest,
+//   registerSuccess,
+//   registerFailure,
+//   loginRequest,
+//   loginSuccess,
+//   loginFailure,
+// } from '../slices/authSlice';
+// import { auth, database } from '../../config/firebase';
+// {
+//   console.log('register saga global');
+// }
+
+// function* handleRegister(action: ReturnType<typeof registerRequest>) {
+//   {
+//     console.log('register saga');
+//   }
+//   try {
+//     console.log('Saga Triggered: Register');
+//     const { email, password, username } = action.payload;
+//     const userCredential = yield call(
+//       createUserWithEmailAndPassword,
+//       auth,
+//       email,
+//       password,
+//     );
+
+//     const user = userCredential.user;
+
+//     // Save user info to Firebase Realtime Database
+//     yield call(set, ref(database, `users/${user.uid}`), {
+//       username,
+//       email,
+//       createdAt: new Date().toISOString(),
+//     });
+
+//     yield put(registerSuccess());
+//   } catch (error: any) {
+//     console.log('Register error:', error.message);
+//     yield put(registerFailure(error.message));
+//   }
+// }
+// {
+//   console.log('sumaaaaaaaasaga');
+// }
+// function* handleLogin(action: ReturnType<typeof loginRequest>) {
+//   try {
+//     console.log('Saga Triggered: Login');
+//     const { email, password } = action.payload;
+//     const userCredential = yield call(
+//       signInWithEmailAndPassword,
+//       auth,
+//       email,
+//       password,
+//     );
+
+//     const user = userCredential.user;
+
+//     const snapshot = yield call(get, ref(database, `users/${user.uid}`));
+//     const profile = snapshot.exists() ? snapshot.val() : {};
+
+//     yield put(loginSuccess({ user, profile }));
+//   } catch (error: any) {
+//     console.log('Login error:', error.message);
+//     yield put(loginFailure(error.message));
+//   }
+// }
+// {
+//   console.log('loginRequest.type', loginRequest.type);
+// }
+// export default function* authSaga() {
+//   {
+//     console.log('triggered root');
+//   }
+//   yield takeLatest(registerRequest.type, handleRegister);
+//   yield takeLatest(loginRequest.type, handleLogin);
+// }

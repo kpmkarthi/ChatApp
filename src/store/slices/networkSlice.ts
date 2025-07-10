@@ -1,39 +1,58 @@
+// src/store/slices/networkSlice.ts
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 interface NetworkState {
   isConnected: boolean;
-  connectionType: string | null;
+  isReconnecting: boolean;
+  lastConnectionTime: number | null;
+  connectionError: string | null;
 }
 
 const initialState: NetworkState = {
   isConnected: true,
-  connectionType: 'wifi',
+  isReconnecting: false,
+  lastConnectionTime: null,
+  connectionError: null,
 };
 
 const networkSlice = createSlice({
   name: 'network',
   initialState,
   reducers: {
-    setNetworkStatus: (
-      state,
-      action: PayloadAction<{
-        isConnected: boolean;
-        connectionType: string | null;
-      }>,
-    ) => {
-      state.isConnected = action.payload.isConnected;
-      state.connectionType = action.payload.connectionType;
+    setConnectionStatus: (state, action: PayloadAction<boolean>) => {
+      state.isConnected = action.payload;
+      if (action.payload) {
+        state.lastConnectionTime = Date.now();
+        state.isReconnecting = false;
+        state.connectionError = null;
+      }
     },
-    networkConnected: state => {
-      state.isConnected = true;
-    },
-    networkDisconnected: state => {
+    connectionLost: state => {
       state.isConnected = false;
+      state.isReconnecting = false;
+      state.connectionError = 'Connection lost';
+    },
+    connectionRestored: state => {
+      state.isConnected = true;
+      state.isReconnecting = false;
+      state.lastConnectionTime = Date.now();
+      state.connectionError = null;
+    },
+    setReconnecting: (state, action: PayloadAction<boolean>) => {
+      state.isReconnecting = action.payload;
+    },
+    setConnectionError: (state, action: PayloadAction<string | null>) => {
+      state.connectionError = action.payload;
     },
   },
 });
 
-export const { setNetworkStatus, networkConnected, networkDisconnected } =
-  networkSlice.actions;
+export const {
+  setConnectionStatus,
+  connectionLost,
+  connectionRestored,
+  setReconnecting,
+  setConnectionError,
+} = networkSlice.actions;
 
 export default networkSlice.reducer;

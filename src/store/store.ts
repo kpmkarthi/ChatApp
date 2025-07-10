@@ -6,7 +6,9 @@ import { rootReducer } from './rootReducer';
 // Import saga differently
 const createSagaMiddleware = require('redux-saga').default;
 const { rootSaga } = require('./rootSaga');
-
+{
+  console.log('rottsaga', rootSaga);
+}
 const persistConfig = {
   key: 'root',
   storage: AsyncStorage,

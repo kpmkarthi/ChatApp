@@ -1,12 +1,13 @@
+// src/store/rootReducer.ts
 import { combineReducers } from '@reduxjs/toolkit';
-import authSlice from './slices/authSlice';
-import chatSlice from './slices/chatSlice';
-import messageSlice from './slices/messageSlice';
-import networkSlice from './slices/networkSlice';
+import authReducer from './slices/authSlice';
+import chatReducer from './slices/chatSlice';
+import messageReducer from './slices/messageSlice';
+import networkReducer from './slices/networkSlice';
 
 export const rootReducer = combineReducers({
-  auth: authSlice,
-  chats: chatSlice,
-  messages: messageSlice,
-  network: networkSlice,
+  auth: authReducer,
+  chats: chatReducer,
+  messages: messageReducer,
+  // network: networkReducer,
 });

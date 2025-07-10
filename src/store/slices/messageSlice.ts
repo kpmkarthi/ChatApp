@@ -2,21 +2,21 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 export interface Message {
   id: string;
-  chatId: string;
-  senderId: string;
   text: string;
+  senderId: string;
   timestamp: number;
-  status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+  status: 'sent' | 'failed';
+  chatId: string;
 }
 
-interface MessageState {
-  messages: { [chatId: string]: Message[] };
+interface MessagesState {
+  messages: Record<string, Message[]>;
   pendingMessages: Message[];
   loading: boolean;
   error: string | null;
 }
 
-const initialState: MessageState = {
+const initialState: MessagesState = {
   messages: {},
   pendingMessages: [],
   loading: false,
@@ -27,177 +27,75 @@ const messageSlice = createSlice({
   name: 'messages',
   initialState,
   reducers: {
-    fetchMessagesRequest: (state, action: PayloadAction<string>) => {
-      state.loading = true;
-      state.error = null;
-    },
-    fetchMessagesSuccess: (
-      state,
-      action: PayloadAction<{ chatId: string; messages: Message[] }>,
-    ) => {
-      // Only update if we don't have messages for this chat or if the new messages are different
-      const { chatId, messages } = action.payload;
-      const existingMessages = state.messages[chatId] || [];
-
-      // Merge existing messages with new ones, avoiding duplicates
-      const messageMap = new Map();
-
-      // Add existing messages first
-      existingMessages.forEach(msg => {
-        messageMap.set(msg.id, msg);
-      });
-
-      // Add new messages, overwriting any duplicates
-      messages.forEach(msg => {
-        messageMap.set(msg.id, msg);
-      });
-
-      // Convert back to array and sort by timestamp
-      state.messages[chatId] = Array.from(messageMap.values()).sort(
-        (a, b) => a.timestamp - b.timestamp,
-      );
-      state.loading = false;
-      state.error = null;
-    },
-    fetchMessagesFailure: (state, action: PayloadAction<string>) => {
-      state.loading = false;
-      state.error = action.payload;
-    },
     sendMessageRequest: (
       state,
       action: PayloadAction<{ chatId: string; text: string; senderId: string }>,
     ) => {
       const { chatId, text, senderId } = action.payload;
-      const message: Message = {
-        id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        chatId,
-        senderId,
+      const tempMessage: Message = {
+        id: `local-${Date.now()}`,
         text,
+        senderId,
         timestamp: Date.now(),
-        status: 'sending',
+        status: 'sent',
+        chatId,
       };
-
-      // Initialize messages array for this chat if it doesn't exist
-      if (!state.messages[chatId]) {
-        state.messages[chatId] = [];
-      }
-
-      // Add the message to the chat
-      state.messages[chatId] = [...state.messages[chatId], message];
-
-      // Add to pending messages
-      state.pendingMessages = [...state.pendingMessages, message];
+      state.pendingMessages.push(tempMessage);
     },
     sendMessageSuccess: (
       state,
-      action: PayloadAction<{
-        messageId: string;
-        chatId: string;
-        serverMessageId?: string;
-      }>,
+      action: PayloadAction<{ chatId: string; message: Message }>,
     ) => {
-      const { messageId, chatId, serverMessageId } = action.payload;
-      const messages = state.messages[chatId];
-
-      if (messages) {
-        const messageIndex = messages.findIndex(m => m.id === messageId);
-        if (messageIndex !== -1) {
-          // Update the message status
-          messages[messageIndex] = {
-            ...messages[messageIndex],
-            status: 'sent',
-            // Update with server ID if provided
-            ...(serverMessageId && { id: serverMessageId }),
-          };
-        }
-      }
-
-      // Remove from pending messages
+      const { chatId, message } = action.payload;
+      state.messages[chatId] = [...(state.messages[chatId] || []), message];
       state.pendingMessages = state.pendingMessages.filter(
-        m => m.id !== messageId,
+        msg => msg.id !== message.id,
       );
     },
     sendMessageFailure: (
       state,
-      action: PayloadAction<{ messageId: string; chatId: string }>,
+      action: PayloadAction<{ chatId: string; error: string }>,
     ) => {
-      const { messageId, chatId } = action.payload;
-      const messages = state.messages[chatId];
-
-      if (messages) {
-        const messageIndex = messages.findIndex(m => m.id === messageId);
-        if (messageIndex !== -1) {
-          messages[messageIndex] = {
-            ...messages[messageIndex],
-            status: 'failed',
-          };
-        }
-      }
+      state.error = action.payload.error;
     },
-    receiveMessage: (state, action: PayloadAction<Message>) => {
-      const message = action.payload;
-      const { chatId } = message;
-
-      if (!state.messages[chatId]) {
-        state.messages[chatId] = [];
-      }
-
-      // Check if message already exists to avoid duplicates
-      const existingMessage = state.messages[chatId].find(
-        m => m.id === message.id,
-      );
-
-      if (!existingMessage) {
-        // Add new message and sort by timestamp
-        state.messages[chatId] = [...state.messages[chatId], message].sort(
-          (a, b) => a.timestamp - b.timestamp,
-        );
-      }
+    fetchMessagesRequest: (state, action: PayloadAction<string>) => {
+      state.loading = true;
     },
-    updateMessageStatus: (
+    fetchMessagesSuccess: (
       state,
-      action: PayloadAction<{
-        messageId: string;
-        chatId: string;
-        status: Message['status'];
-      }>,
+      action: PayloadAction<{ chatId: string; messages: Message[] }>,
     ) => {
-      const { messageId, chatId, status } = action.payload;
-      const messages = state.messages[chatId];
-
-      if (messages) {
-        const messageIndex = messages.findIndex(m => m.id === messageId);
-        if (messageIndex !== -1) {
-          messages[messageIndex] = {
-            ...messages[messageIndex],
-            status,
-          };
-        }
-      }
+      state.messages[action.payload.chatId] = action.payload.messages;
+      state.loading = false;
     },
-    retryPendingMessages: state => {
-      // This will be handled by saga
+    fetchMessagesFailure: (
+      state,
+      action: PayloadAction<{ chatId: string; error: string }>,
+    ) => {
+      state.loading = false;
+      state.error = action.payload.error;
     },
-    clearMessages: (state, action: PayloadAction<string>) => {
-      const chatId = action.payload;
-      if (state.messages[chatId]) {
-        delete state.messages[chatId];
+    retryFailedMessage: (
+      state,
+      action: PayloadAction<{ chatId: string; messageId: string }>,
+    ) => {
+      const { chatId, messageId } = action.payload;
+      const message = state.pendingMessages.find(m => m.id === messageId);
+      if (message) {
+        // retry logic placeholder
       }
     },
   },
 });
 
 export const {
-  fetchMessagesRequest,
-  fetchMessagesSuccess,
-  fetchMessagesFailure,
   sendMessageRequest,
   sendMessageSuccess,
   sendMessageFailure,
-  receiveMessage,
-  updateMessageStatus,
-  retryPendingMessages,
-  clearMessages,
+  fetchMessagesRequest,
+  fetchMessagesSuccess,
+  fetchMessagesFailure,
+  retryFailedMessage,
 } = messageSlice.actions;
 
 export default messageSlice.reducer;

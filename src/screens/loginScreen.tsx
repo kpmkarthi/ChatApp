@@ -16,7 +16,11 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootStackParamList } from '../../App';
 import { RootState } from '../store/store';
-import { loginRequest, registerRequest } from '../store/slices/authSlice';
+import {
+  loginRequest,
+  registerRequest,
+  clearError,
+} from '../store/slices/authSlice';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
@@ -33,32 +37,47 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
 
   useEffect(() => {
     if (isAuthenticated) {
+      setUsername('');
+      setEmail('');
+      setPassword('');
       navigation.replace('ChatList');
     }
   }, [isAuthenticated, navigation]);
 
   const handleSubmit = () => {
-    if (!username.trim() || !password.trim()) {
+    if (!email.trim() || !password.trim() || (!isLogin && !username.trim())) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-
     if (isLogin) {
-      dispatch(loginRequest({ username, password }));
+      console.log('loginif');
+
+      dispatch(loginRequest({ email, password }));
     } else {
-      if (!email.trim()) {
-        Alert.alert('Error', 'Please fill in all fields');
-        return;
-      }
+      console.log('adsf');
       dispatch(registerRequest({ username, email, password }));
     }
   };
 
   useEffect(() => {
     if (error) {
-      Alert.alert('Error', error);
+      let errorMessage = error;
+      if (error.includes('auth/invalid-email')) {
+        errorMessage = 'Invalid email format';
+      } else if (error.includes('auth/wrong-password')) {
+        errorMessage = 'Incorrect password';
+      } else if (error.includes('auth/user-not-found')) {
+        errorMessage = 'User not found';
+      } else if (error.includes('auth/email-already-in-use')) {
+        errorMessage = 'Email already in use';
+      } else if (error.includes('auth/network-request-failed')) {
+        errorMessage = 'Network error, please check your connection';
+      }
+      Alert.alert('Error', errorMessage, [
+        { text: 'OK', onPress: () => dispatch(clearError()) },
+      ]);
     }
-  }, [error]);
+  }, [error, dispatch]);
 
   return (
     <KeyboardAvoidingView
@@ -75,26 +94,26 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
           </Text>
 
           <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="Username"
-              value={username}
-              onChangeText={setUsername}
-              autoCapitalize="none"
-              placeholderTextColor="#999"
-            />
-
             {!isLogin && (
               <TextInput
                 style={styles.input}
-                placeholder="Email"
-                value={email}
-                onChangeText={setEmail}
+                placeholder="Username"
+                value={username}
+                onChangeText={setUsername}
                 autoCapitalize="none"
-                keyboardType="email-address"
                 placeholderTextColor="#999"
               />
             )}
+
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              placeholderTextColor="#999"
+            />
 
             <TextInput
               style={styles.input}
@@ -107,17 +126,15 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
           </View>
 
           <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+            style={[styles.button]}
             onPress={handleSubmit}
-            disabled={loading}
+            // disabled={loading}
           >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>
-                {isLogin ? 'Sign In' : 'Sign Up'}
-              </Text>
-            )}
+            (
+            <Text style={styles.buttonText}>
+              {isLogin ? 'Sign In' : 'Sign Up'}
+            </Text>
+            )
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -134,8 +151,10 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
           {isLogin && (
             <View style={styles.demoContainer}>
               <Text style={styles.demoText}>Demo Credentials:</Text>
-              <Text style={styles.demoCredentials}>Username: test</Text>
-              <Text style={styles.demoCredentials}>Password: test</Text>
+              <Text style={styles.demoCredentials}>
+                Email: test@example.com
+              </Text>
+              <Text style={styles.demoCredentials}>Password: test123</Text>
             </View>
           )}
         </View>

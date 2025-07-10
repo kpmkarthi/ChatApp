@@ -6,42 +6,21 @@ export interface Chat {
   lastMessage: string;
   timestamp: number;
   unreadCount: number;
+  type?: 'global' | 'private';
 }
 
 interface ChatState {
   chats: Chat[];
+  globalChatrooms: Chat[];
   loading: boolean;
   error: string | null;
-  activeChat: string | null; // Track which chat is currently active
 }
 
 const initialState: ChatState = {
-  chats: [
-    {
-      id: '1',
-      contactName: 'Alice Johnson',
-      lastMessage: 'Hey! How are you doing?',
-      timestamp: Date.now() - 300000, // 5 minutes ago
-      unreadCount: 2,
-    },
-    {
-      id: '2',
-      contactName: 'Bob Smith',
-      lastMessage: 'See you tomorrow!',
-      timestamp: Date.now() - 3600000, // 1 hour ago
-      unreadCount: 0,
-    },
-    {
-      id: '3',
-      contactName: 'Charlie Brown',
-      lastMessage: 'Thanks for the help!',
-      timestamp: Date.now() - 86400000, // 1 day ago
-      unreadCount: 1,
-    },
-  ],
+  chats: [],
+  globalChatrooms: [],
   loading: false,
   error: null,
-  activeChat: null,
 };
 
 const chatSlice = createSlice({
@@ -49,8 +28,10 @@ const chatSlice = createSlice({
   initialState,
   reducers: {
     fetchChatsRequest: state => {
+      {
+        console.log(' feting data list');
+      }
       state.loading = true;
-      state.error = null;
     },
     fetchChatsSuccess: (state, action: PayloadAction<Chat[]>) => {
       state.chats = action.payload;
@@ -61,73 +42,40 @@ const chatSlice = createSlice({
       state.loading = false;
       state.error = action.payload;
     },
-    updateChatLastMessage: (
+    fetchGlobalChatroomsRequest: state => {
+      console.log('loballllllll');
+      state.loading = true;
+    },
+    fetchGlobalChatroomsSuccess: (state, action: PayloadAction<Chat[]>) => {
+      console.log('pppppiiiiiiiiiii');
+
+      state.globalChatrooms = action.payload;
+      state.loading = false;
+    },
+    fetchGlobalChatroomsFailure: (state, action: PayloadAction<string>) => {
+      console.log(']]]]]]]]]]]]]]');
+
+      state.loading = false;
+      state.error = action.payload;
+    },
+    updateLastMessage: (
       state,
       action: PayloadAction<{
         chatId: string;
-        message: string;
+        text: string;
         timestamp: number;
       }>,
     ) => {
       const chat = state.chats.find(c => c.id === action.payload.chatId);
       if (chat) {
-        chat.lastMessage = action.payload.message;
+        chat.lastMessage = action.payload.text;
         chat.timestamp = action.payload.timestamp;
-
-        // Sort chats by timestamp (most recent first)
-        state.chats.sort((a, b) => b.timestamp - a.timestamp);
-      }
-    },
-    incrementUnreadCount: (state, action: PayloadAction<string>) => {
-      const chat = state.chats.find(c => c.id === action.payload);
-      if (chat) {
-        // Only increment if this chat is not currently active
-        if (state.activeChat !== action.payload) {
-          chat.unreadCount += 1;
-        }
       }
     },
     markAsRead: (state, action: PayloadAction<string>) => {
       const chat = state.chats.find(c => c.id === action.payload);
       if (chat) {
         chat.unreadCount = 0;
-      }
-    },
-    setActiveChat: (state, action: PayloadAction<string | null>) => {
-      state.activeChat = action.payload;
-      // Mark active chat as read
-      if (action.payload) {
-        const chat = state.chats.find(c => c.id === action.payload);
-        if (chat) {
-          chat.unreadCount = 0;
-        }
-      }
-    },
-    receiveNewMessage: (
-      state,
-      action: PayloadAction<{
-        chatId: string;
-        message: string;
-        timestamp: number;
-        senderId: string;
-      }>,
-    ) => {
-      const { chatId, message, timestamp, senderId } = action.payload;
-      const chat = state.chats.find(c => c.id === chatId);
-
-      if (chat) {
-        chat.lastMessage = message;
-        chat.timestamp = timestamp;
-
-        // Only increment unread count if:
-        // 1. The message is not from the current user (assuming you have current user info)
-        // 2. The chat is not currently active
-        if (state.activeChat !== chatId) {
-          chat.unreadCount += 1;
-        }
-
-        // Sort chats by timestamp (most recent first)
-        state.chats.sort((a, b) => b.timestamp - a.timestamp);
       }
     },
   },
@@ -137,11 +85,11 @@ export const {
   fetchChatsRequest,
   fetchChatsSuccess,
   fetchChatsFailure,
-  updateChatLastMessage,
-  incrementUnreadCount,
+  fetchGlobalChatroomsRequest,
+  fetchGlobalChatroomsSuccess,
+  fetchGlobalChatroomsFailure,
+  updateLastMessage,
   markAsRead,
-  setActiveChat,
-  receiveNewMessage,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "29983463207",
+    "firebase_url": "https://reactnative-chat-app-6cf43-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "reactnative-chat-app-6cf43",
+    "storage_bucket": "reactnative-chat-app-6cf43.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:29983463207:android:6ef9434ad2b8684ea7fb02",
+        "android_client_info": {
+          "package_name": "com.dashboard"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyALbWGCQh2TRa-Y1uaUdjgG3aZhDxHy5JY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
