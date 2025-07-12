@@ -1,0 +1,40 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": true,
+        ".write": true
+      }
+    },
+    "chatroom": {
+      ".read": true,
+      ".write": true
+    },
+    "chats": {
+      "$chatId": {
+        ".read": true,
+        ".write": true
+      }
+    },
+    "messages": {
+      "$chatId": {
+        ".read": true,
+        ".write": true
+      }
+    },
+    "userChats": {
+      "$uid": {
+        ".read": true,
+        ".write": true
+      }
+    },
+    "readStatus": {
+      "$chatId": {
+        "$uid": {
+          ".read": true,
+          ".write": true
+        }
+      }
+    }
+  }
+}

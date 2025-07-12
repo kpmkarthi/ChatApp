@@ -1,97 +1,267 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# React Native Chat App with Real-time Messaging
 
-# Getting Started
+A modern React Native chat application with real-time messaging capabilities using Firebase Realtime Database and Redux Saga for state management.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Features
 
-## Step 1: Start Metro
+### 🗨️ Chat List Screen
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+- **Real-time conversation list** - Shows all conversations with live updates
+- **Contact information** - Displays contact name, last message, and timestamp
+- **Message status indicators** - Visual indicators for sent, delivered, read, and failed messages
+- **Unread message counts** - Badge showing number of unread messages
+- **Global and private chats** - Support for both private conversations and global chatrooms
+- **Pull-to-refresh** - Refresh chat list with pull gesture
+- **Offline support** - Works with network status detection
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+### 💬 Chat Room Screen
 
-```sh
-# Using npm
-npm start
+- **Real-time messaging** - Instant message delivery using Firebase Realtime Database
+- **Message timestamps** - Each message shows when it was sent
+- **Sender identification** - Clear indication of who sent each message
+- **Message status** - Visual feedback for message delivery status
+- **Typing indicators** - Shows when someone is typing
+- **Auto-scroll** - Automatically scrolls to latest messages
+- **Message retry** - Retry failed messages with tap gesture
+- **Date separators** - Groups messages by date for better organization
 
-# OR using Yarn
-yarn start
+### 🔄 Real-time Features
+
+- **Firebase Integration** - Uses Firebase Realtime Database for real-time updates
+- **Redux Saga** - Handles async operations and side effects
+- **WebSocket Simulation** - Mock WebSocket for testing real-time functionality
+- **Message Synchronization** - Ensures messages are properly synced across devices
+- **Offline Queue** - Messages are queued when offline and sent when connection is restored
+
+## Technical Implementation
+
+### Architecture
+
+- **React Native** - Cross-platform mobile development
+- **Redux Toolkit** - State management with RTK Query
+- **Redux Saga** - Side effect management for async operations
+- **Firebase Realtime Database** - Real-time data synchronization
+- **TypeScript** - Type-safe development
+
+### Key Components
+
+#### Firebase Service (`src/services/firebaseService.ts`)
+
+- Handles all Firebase database operations
+- Manages real-time listeners for messages and chats
+- Provides methods for sending messages, fetching chats, and updating status
+
+#### Message Saga (`src/store/sagas/messageSaga.ts`)
+
+- Manages real-time message listening
+- Handles message sending with optimistic updates
+- Implements retry logic for failed messages
+- Coordinates with Firebase service
+
+#### Chat Saga (`src/store/sagas/chatsaga.ts`)
+
+- Fetches and manages chat lists
+- Handles real-time chat updates
+- Manages global and private chatrooms
+
+#### Mock Data Service (`src/services/mockDataService.ts`)
+
+- Provides sample data for testing
+- Simulates real-time message updates
+- Includes MockWebSocket for testing without Firebase
+
+### State Management
+
+#### Message Slice (`src/store/slices/messageSlice.ts`)
+
+```typescript
+interface MessagesState {
+  messages: Record<string, Message[]>;
+  pendingMessages: Message[];
+  loading: boolean;
+  error: string | null;
+  listeners: Record<string, boolean>;
+}
 ```
 
-## Step 2: Build and run your app
+#### Chat Slice (`src/store/slices/chatSlice.ts`)
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+```typescript
+interface Chat {
+  id: string;
+  contactName: string;
+  lastMessage: string;
+  timestamp: number;
+  unreadCount: number;
+  type: 'private' | 'global';
+}
 ```
 
-### iOS
+### Real-time Messaging Flow
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+1. **User sends message** → Optimistic update in UI
+2. **Message sent to Firebase** → Real-time database update
+3. **Other users receive message** → Firebase listener triggers
+4. **UI updates automatically** → Redux state updated
+5. **Message status updated** → Sent → Delivered → Read
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+### Firebase Database Structure
 
-```sh
-bundle install
+```
+/messages/{chatId}/{messageId}
+  - text: string
+  - senderId: string
+  - timestamp: number
+  - status: 'sent' | 'delivered' | 'read' | 'failed'
+
+/chats/{chatId}
+  - participants: string[]
+  - lastMessage: string
+  - lastMessageTimestamp: number
+  - type: 'private' | 'global'
+
+/userChats/{userId}/{chatId}
+  - true (indicates user is part of this chat)
+
+/globalChats/{chatId}
+  - contactName: string
+  - lastMessage: string
+  - lastMessageTimestamp: number
 ```
 
-Then, and every time you update your native dependencies, run:
+## Getting Started
 
-```sh
-bundle exec pod install
+### Prerequisites
+
+- Node.js (v14 or higher)
+- React Native CLI
+- Firebase project setup
+
+### Installation
+
+1. **Clone the repository**
+
+   ```bash
+   git clone <repository-url>
+   cd dashboard
+   ```
+
+2. **Install dependencies**
+
+   ```bash
+   npm install
+   ```
+
+3. **Configure Firebase**
+
+   - Create a Firebase project
+   - Enable Realtime Database
+   - Update `src/config/firebase.ts` with your Firebase config
+
+4. **Run the app**
+
+   ```bash
+   # iOS
+   npx react-native run-ios
+
+   # Android
+   npx react-native run-android
+   ```
+
+### Firebase Setup
+
+1. **Create Firebase Project**
+
+   - Go to [Firebase Console](https://console.firebase.google.com/)
+   - Create a new project
+   - Enable Realtime Database
+
+2. **Configure Database Rules**
+
+   ```json
+   {
+     "rules": {
+       "messages": {
+         "$chatId": {
+           ".read": "auth != null",
+           ".write": "auth != null"
+         }
+       },
+       "chats": {
+         "$chatId": {
+           ".read": "auth != null",
+           ".write": "auth != null"
+         }
+       },
+       "userChats": {
+         "$userId": {
+           ".read": "auth != null && auth.uid == $userId",
+           ".write": "auth != null && auth.uid == $userId"
+         }
+       }
+     }
+   }
+   ```
+
+3. **Update Firebase Config**
+   - Replace the config in `src/config/firebase.ts` with your project settings
+
+## Testing
+
+### Mock Data
+
+The app includes a mock data service for testing without Firebase:
+
+```typescript
+import { mockWebSocket } from '../services/mockDataService';
+
+// Use mock WebSocket instead of Firebase
+mockWebSocket.listenToMessages(chatId, message => {
+  // Handle incoming message
+});
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+### Real-time Testing
 
-```sh
-# Using npm
-npm run ios
+- Send messages in different chat rooms
+- Test offline functionality
+- Verify message status updates
+- Check real-time updates across multiple devices
 
-# OR using Yarn
-yarn ios
-```
+## Features in Detail
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+### Message Status
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+- **Pending** - Message is being sent
+- **Sent** - Message has been sent to server
+- **Delivered** - Message has been delivered to recipient
+- **Read** - Message has been read by recipient
+- **Failed** - Message failed to send (retry available)
 
-## Step 3: Modify your app
+### Chat Types
 
-Now that you have successfully run the app, let's make changes!
+- **Private Chats** - One-on-one conversations
+- **Global Chats** - Group conversations open to all users
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+### Real-time Updates
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+- **Message delivery** - Instant message delivery
+- **Typing indicators** - Shows when someone is typing
+- **Online status** - Shows user online/offline status
+- **Message status** - Real-time status updates
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+## Contributing
 
-## Congratulations! :tada:
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
-You've successfully run and modified your React Native App. :partying_face:
+## License
 
-### Now what?
+This project is licensed under the MIT License.
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+## Support
 
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+For support and questions, please open an issue in the repository.

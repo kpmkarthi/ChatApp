@@ -17,13 +17,14 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RootStackParamList } from '../../App';
 import { RootState } from '../store/store';
 import {
-  fetchMessagesRequest,
   sendMessageRequest,
   retryFailedMessage,
   Message,
+  fetchMessagesSuccess,
 } from '../store/slices/messageSlice';
 import { markAsRead } from '../store/slices/chatSlice';
 import { useFocusEffect } from '@react-navigation/native';
+import { getDatabase } from '@react-native-firebase/database';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ChatRoom'>;
 
@@ -32,36 +33,132 @@ const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   const [inputText, setInputText] = useState('');
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
+  const [isNearBottom, setIsNearBottom] = useState(true);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const dispatch = useDispatch();
   const { messages, pendingMessages } = useSelector(
     (state: RootState) => state.messages,
   );
   const { user } = useSelector((state: RootState) => state.auth);
-  // const { isConnected } = useSelector((state: RootState) => state.network);
+  const { isConnected } = useSelector((state: RootState) => state.network);
 
-  // Combine fetched messages with pending messages for the current chat
-  const chatMessages = [
-    ...(messages[chatId] || []),
-    ...pendingMessages.filter(msg => msg.chatId === chatId),
-  ].sort((a, b) => a.timestamp - b.timestamp); // Sort by timestamp for chronological order
+  // Get confirmed messages from Firebase and pending messages for this chat
+  const confirmedMessages = (messages[chatId] || [])
+    .map(msg => ({
+      id: String(msg.id || ''),
+      text: String(msg.text || ''),
+      senderId: String(msg.senderId || ''),
+      timestamp: Number(msg.timestamp || 0),
+      status: msg.status || 'sent',
+      chatId: String(msg.chatId || ''),
+    }))
+    .sort((a, b) => a.timestamp - b.timestamp);
 
-  useEffect(() => {
-    // Set navigation header title
-    navigation.setOptions({
-      title: contactName || 'General',
-    });
-    dispatch(fetchMessagesRequest(chatId));
-  }, [dispatch, chatId, contactName, navigation]);
+  const chatPendingMessages = pendingMessages
+    .filter(msg => msg.chatId === chatId)
+    .map(msg => ({
+      id: String(msg.id || ''),
+      text: String(msg.text || ''),
+      senderId: String(msg.senderId || ''),
+      timestamp: Number(msg.timestamp || 0),
+      status: 'pending' as const,
+      chatId: String(msg.chatId || ''),
+    }))
+    .sort((a, b) => a.timestamp - b.timestamp);
 
-  useFocusEffect(
-    useCallback(() => {
-      dispatch(markAsRead(chatId));
-    }, [dispatch, chatId]),
+  // Combine confirmed and pending messages
+  const chatMessages = [...confirmedMessages, ...chatPendingMessages].sort(
+    (a, b) => a.timestamp - b.timestamp,
   );
 
   useEffect(() => {
-    flatListRef.current?.scrollToEnd({ animated: true });
+    navigation.setOptions({
+      title: contactName || 'General',
+    });
+  }, [contactName, navigation]);
+
+  // Real-time Firebase listener for messages
+  useEffect(() => {
+    const ref = getDatabase().ref(`messages/${chatId}`);
+    const onValueChange = ref.on('value', snapshot => {
+      const data = snapshot.val() || {};
+      const msgs = Object.values(data) as Message[];
+      dispatch(fetchMessagesSuccess({ chatId, messages: msgs }));
+    });
+    return () => ref.off('value', onValueChange);
+  }, [chatId, dispatch]);
+
+  // Mark messages as read when entering chat room
+  useFocusEffect(
+    useCallback(() => {
+      // Mark as read immediately when entering the chat
+      dispatch(markAsRead(chatId));
+
+      // Also mark as read when messages are loaded
+      if (confirmedMessages.length > 0) {
+        dispatch(markAsRead(chatId));
+      }
+    }, [dispatch, chatId, confirmedMessages.length]),
+  );
+
+  // Enhanced auto-scroll functionality
+  useEffect(() => {
+    if (chatMessages.length > 0 && isNearBottom) {
+      // Small delay to ensure the message is rendered
+      const timer = setTimeout(() => {
+        if (flatListRef.current) {
+          flatListRef.current.scrollToEnd({ animated: true });
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [chatMessages.length, isNearBottom]);
+
+  // Keyboard handling
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => {
+        setKeyboardVisible(true);
+        // Auto-scroll when keyboard appears
+        setTimeout(() => {
+          if (flatListRef.current && chatMessages.length > 0) {
+            flatListRef.current.scrollToEnd({ animated: true });
+          }
+        }, 300);
+      },
+    );
+
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        setKeyboardVisible(false);
+      },
+    );
+
+    return () => {
+      keyboardDidShowListener?.remove();
+      keyboardDidHideListener?.remove();
+    };
+  }, [chatMessages.length]);
+
+  // Handle scroll events to determine if user is near bottom
+  const handleScroll = useCallback((event: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const paddingToBottom = 20;
+    const isCloseToBottom =
+      layoutMeasurement.height + contentOffset.y >=
+      contentSize.height - paddingToBottom;
+
+    setIsNearBottom(isCloseToBottom);
+  }, []);
+
+  // Scroll to bottom function
+  const scrollToBottom = useCallback(() => {
+    if (flatListRef.current && chatMessages.length > 0) {
+      flatListRef.current.scrollToEnd({ animated: true });
+    }
   }, [chatMessages.length]);
 
   const handleTyping = (text: string) => {
@@ -70,22 +167,7 @@ const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
 
   const handleSendMessage = () => {
     if (!inputText.trim()) return;
-
-    // if (!isConnected) {
-    //   Alert.alert(
-    //     'No Connection',
-    //     'You are offline. Message will be sent when connection is restored.',
-    //     [
-    //       { text: 'Cancel', style: 'cancel' },
-    //       {
-    //         text: 'Send Anyway',
-    //         onPress: () => send(),
-    //       },
-    //     ],
-    //   );
-    // } else {
     send();
-    // }
   };
 
   const send = () => {
@@ -94,11 +176,16 @@ const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
         sendMessageRequest({
           chatId,
           text: inputText.trim(),
-          senderId: user.id,
+          senderId: user.uid, // This is the username (e.g., "kali")
         }),
       );
       setInputText('');
       Keyboard.dismiss();
+
+      // Force scroll to bottom when sending message
+      setTimeout(() => {
+        scrollToBottom();
+      }, 100);
     }
   };
 
@@ -130,6 +217,8 @@ const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
         return '✓';
       case 'failed':
         return '❌';
+      case 'pending':
+        return '⏳';
       default:
         return '';
     }
@@ -139,67 +228,151 @@ const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
     switch (status) {
       case 'sent':
         return '#999';
-
       case 'failed':
         return '#f44336';
+      case 'pending':
+        return '#FF9800';
       default:
         return '#999';
     }
   };
 
   const renderMessage = ({ item }: { item: Message }) => {
-    const isMyMessage = item.senderId === user?.id;
-    const canRetry = isMyMessage && item.status === 'failed';
+    try {
+      // Validate message data
+      if (!item || !item.text) {
+        console.warn('⚠️ Invalid message data:', item);
+        return (
+          <View style={styles.messageRow}>
+            <Text style={styles.messageText}>Invalid message</Text>
+          </View>
+        );
+      }
 
-    return (
-      <TouchableOpacity
-        style={[
-          styles.messageContainer,
-          isMyMessage ? styles.myMessage : styles.theirMessage,
-        ]}
-        onPress={canRetry ? () => handleRetryMessage(item) : undefined}
-        disabled={!canRetry}
-        activeOpacity={canRetry ? 0.7 : 1}
-      >
-        <View
+      // Create a safe copy of the message to avoid read-only issues
+      const message = {
+        id: String(item.id || ''),
+        text: String(item.text || ''),
+        senderId: String(item.senderId || ''),
+        timestamp: Number(item.timestamp || 0),
+        status: item.status || 'sent',
+        chatId: String(item.chatId || ''),
+      };
+
+      // For dummy login, user.uid is the current username (e.g., "star")
+      // message.senderId is the username who sent the message (e.g., "kali")
+      const isMyMessage = message.senderId === user?.uid;
+      const canRetry =
+        isMyMessage &&
+        (message.status === 'failed' || message.status === 'pending');
+
+      // Show "You" for my messages, sender name for others
+      const senderName = isMyMessage ? 'You' : message.senderId || 'Unknown';
+      const avatarColor = isMyMessage ? '#075E54' : '#25D366';
+
+      // Get the text to use for avatar letter with proper null checks
+      const avatarText = isMyMessage
+        ? user?.displayName || user?.uid || 'Y'
+        : message.senderId || 'U';
+
+      const avatarLetter = avatarText.charAt(0).toUpperCase();
+
+      return (
+        <TouchableOpacity
           style={[
-            styles.messageBubble,
-            isMyMessage ? styles.myBubble : styles.theirBubble,
-            item.status === 'failed' && styles.failedBubble,
+            styles.messageRow,
+            isMyMessage ? styles.myMessage : styles.theirMessage,
           ]}
+          onPress={canRetry ? () => handleRetryMessage(message) : undefined}
+          disabled={!canRetry}
+          activeOpacity={canRetry ? 0.7 : 1}
         >
-          <Text
-            style={[
-              styles.messageText,
-              isMyMessage ? styles.myMessageText : styles.theirMessageText,
-            ]}
-          >
-            {item.text}
-          </Text>
-          <View style={styles.messageFooter}>
-            <Text
+          {/* Avatar for received messages (left) */}
+          {!isMyMessage && (
+            <View
               style={[
-                styles.messageTime,
-                isMyMessage ? styles.myMessageTime : styles.theirMessageTime,
+                styles.avatar,
+                { backgroundColor: avatarColor, marginRight: 0 },
               ]}
             >
-              {formatTime(item.timestamp)}
-            </Text>
-            {isMyMessage && (
+              <Text style={styles.avatarText}>{avatarLetter}</Text>
+            </View>
+          )}
+          <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+            <View
+              style={[
+                styles.messageBubble,
+                isMyMessage ? styles.myBubble : styles.theirBubble,
+                message.status === 'failed' && styles.failedBubble,
+                message.status === 'pending' && styles.pendingBubble,
+              ]}
+            >
               <Text
                 style={[
-                  styles.messageStatus,
-                  { color: getMessageStatusColor(item.status) },
+                  styles.messageText,
+                  isMyMessage ? styles.myMessageText : styles.theirMessageText,
                 ]}
               >
-                {getMessageStatusIcon(item.status)}
+                {message.text}
               </Text>
-            )}
+              <View style={styles.messageFooter}>
+                <Text
+                  style={[
+                    styles.messageTime,
+                    isMyMessage
+                      ? styles.myMessageTime
+                      : styles.theirMessageTime,
+                  ]}
+                >
+                  {formatTime(message.timestamp)}
+                </Text>
+                {isMyMessage && (
+                  <Text
+                    style={[
+                      styles.messageStatus,
+                      { color: getMessageStatusColor(message.status) },
+                    ]}
+                  >
+                    {getMessageStatusIcon(message.status)}
+                  </Text>
+                )}
+              </View>
+            </View>
           </View>
+          {/* Avatar for my messages (right) */}
+          {isMyMessage && (
+            <View
+              style={[
+                styles.avatar,
+                { backgroundColor: avatarColor, marginLeft: 0 },
+              ]}
+            >
+              <Text style={styles.avatarText}>{avatarLetter}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      );
+    } catch (error) {
+      return (
+        <View style={styles.messageRow}>
+          <Text style={styles.messageText}>Error rendering message</Text>
         </View>
-      </TouchableOpacity>
-    );
+      );
+    }
   };
+
+  // Show loading state if user is not available
+  if (!user) {
+    return (
+      <View style={styles.container}>
+        <StatusBar backgroundColor="#075E54" barStyle="light-content" />
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>Loading...</Text>
+          <Text style={styles.emptySubtext}>Please wait</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -208,11 +381,25 @@ const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <StatusBar backgroundColor="#075E54" barStyle="light-content" />
+
+      {/* Offline indicator */}
+      {!isConnected && (
+        <View style={styles.offlineBar}>
+          <Text style={styles.offlineText}>
+            📡 You're offline - Messages will be sent when connection is
+            restored
+          </Text>
+        </View>
+      )}
+
       <FlatList
         ref={flatListRef}
         data={chatMessages}
         renderItem={renderMessage}
         keyExtractor={item => item.id}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No messages yet</Text>
@@ -251,17 +438,35 @@ const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  container: { flex: 1, backgroundColor: '#f5f5f5', justifyContent: 'center' },
+  offlineBar: {
+    backgroundColor: '#f44336',
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  offlineText: { color: '#fff', fontSize: 12, fontWeight: '500' },
   messagesList: { paddingVertical: 8 },
   messageContainer: { paddingHorizontal: 16, paddingVertical: 4 },
-  myMessage: { alignItems: 'flex-end' },
-  theirMessage: { alignItems: 'flex-start' },
+  myMessage: {
+    alignItems: 'flex-end',
+    marginRight: 0,
+    marginLeft: 20,
+    flexDirection: 'row',
+  },
+  theirMessage: {
+    alignItems: 'flex-start',
+    marginRight: 2,
+    marginLeft: 0,
+    flexDirection: 'row',
+  },
   messageBubble: {
-    maxWidth: '80%',
+    maxWidth: '100%',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 16,
     elevation: 1,
+    flexShrink: 1,
+    marginHorizontal: 4,
   },
   myBubble: { backgroundColor: '#075E54', borderBottomRightRadius: 4 },
   theirBubble: { backgroundColor: '#fff', borderBottomLeftRadius: 4 },
@@ -269,6 +474,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffebee',
     borderWidth: 1,
     borderColor: '#f44336',
+  },
+  pendingBubble: {
+    backgroundColor: '#fff3e0',
+    borderWidth: 1,
+    borderColor: '#FF9800',
   },
   messageText: { fontSize: 16 },
   myMessageText: { color: '#fff' },
@@ -318,6 +528,33 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   emptySubtext: { fontSize: 14, color: '#666', textAlign: 'center' },
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    // marginHorizontal: 8,
+  },
+  avatarText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  senderName: {
+    fontSize: 12,
+    color: '#25D366',
+    fontWeight: '600',
+    marginBottom: 2,
+    marginLeft: 2,
+  },
+  messageRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    gap: 8,
+  },
 });
 
 export default ChatRoomScreen;

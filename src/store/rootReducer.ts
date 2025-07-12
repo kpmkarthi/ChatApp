@@ -9,5 +9,5 @@ export const rootReducer = combineReducers({
   auth: authReducer,
   chats: chatReducer,
   messages: messageReducer,
-  // network: networkReducer,
+  network: networkReducer,
 });

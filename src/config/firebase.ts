@@ -1,34 +1,17 @@
 // src/config/firebase.ts
-import { getApps, initializeApp } from 'firebase/app';
-import { getDatabase } from 'firebase/database';
-import { getAuth } from 'firebase/auth';
+import { getDatabase } from '@react-native-firebase/database';
+import auth from '@react-native-firebase/auth';
 
-const firebaseConfig = {
-  apiKey: 'AIzaSyALbWGCQh2TRa-Y1uaUdjgG3aZhDxHy5JY',
-  authDomain: 'reactnative-chat-app.firebaseapp.com',
-  databaseURL:
-    'https://reactnative-chat-app-6cf43-default-rtdb.asia-southeast1.firebasedatabase.app/',
-  projectId: 'reactnative-chat-app-6cf43',
-  storageBucket: 'reactnative-chat-app.appspot.com',
-  messagingSenderId: '29983463207',
-  appId: '1:29983463207:android:6ef9434ad2b8684ea7fb02',
-};
-let app;
-if (!getApps().length) {
-  console.log(firebaseConfig);
-
-  app = initializeApp(firebaseConfig);
-}
-// Initialize Firebase
-// const app = initializeApp(firebaseConfig);
+// For React Native Firebase, we don't need to initialize the app manually
+// It's automatically initialized when you install the package
 
 // Initialize Firebase Database
-export const database = getDatabase(app);
+export const database = getDatabase();
 
 // Initialize Firebase Auth
-export const auth = getAuth(app);
+export const firebaseAuth = auth();
 
-export default app;
+export default { database, auth: firebaseAuth };
 
-// Note: Replace the config values with your actual Firebase project configuration
-// You can find these values in your Firebase Console > Project Settings > General > Your apps
+// Note: React Native Firebase automatically uses the google-services.json file
+// Make sure you have the correct google-services.json file in your android/app/ directory

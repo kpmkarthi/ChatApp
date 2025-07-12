@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,39 +17,90 @@ import {
   fetchChatsRequest,
   fetchGlobalChatroomsRequest,
   Chat,
+  updatePendingCount,
 } from '../store/slices/chatSlice';
-// import { logout } from '../store/slices/authSlice';
+import { logout } from '../store/slices/authSlice';
 import { useFocusEffect } from '@react-navigation/native';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ChatList'>;
 
 const ChatListScreen: React.FC<Props> = ({ navigation }) => {
   const dispatch = useDispatch();
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastPendingCountsRef = useRef<Record<string, number>>({});
 
-  // ✅ Safe state access
   const {
     chats = [],
     globalChatrooms = [],
     loading = false,
   } = useSelector((state: RootState) => state.chats || {});
   const user = useSelector((state: RootState) => state.auth?.user || null);
-  // const isConnected = useSelector(
-  //   (state: RootState) => state.network?.isConnected ?? true,
-  // );
+  const { isConnected } = useSelector((state: RootState) => state.network);
+  const { pendingMessages } = useSelector((state: RootState) => state.messages);
 
-  const allChats: Chat[] = [...globalChatrooms, ...chats];
+  const allChats: Chat[] = useMemo(
+    () => [...globalChatrooms, ...chats],
+    [globalChatrooms, chats],
+  );
+
+  // Calculate pending message counts for each chat - optimized to prevent infinite loops
+  useEffect(() => {
+    const pendingCounts: Record<string, number> = {};
+
+    pendingMessages.forEach(message => {
+      if (!pendingCounts[message.chatId]) {
+        pendingCounts[message.chatId] = 0;
+      }
+      pendingCounts[message.chatId]++;
+    });
+
+    // Only update if counts have actually changed
+    const allChatIds = new Set([
+      ...chats.map(c => c.id),
+      ...globalChatrooms.map(c => c.id),
+    ]);
+
+    allChatIds.forEach(chatId => {
+      const newCount = pendingCounts[chatId] || 0;
+      const lastCount = lastPendingCountsRef.current[chatId] || 0;
+
+      if (newCount !== lastCount) {
+        dispatch(updatePendingCount({ chatId, pendingCount: newCount }));
+        lastPendingCountsRef.current[chatId] = newCount;
+      }
+    });
+
+    // Clear counts for chats that no longer exist
+    Object.keys(lastPendingCountsRef.current).forEach(chatId => {
+      if (!allChatIds.has(chatId)) {
+        delete lastPendingCountsRef.current[chatId];
+      }
+    });
+  }, [pendingMessages, dispatch]); // Removed chats and globalChatrooms from dependencies
 
   useEffect(() => {
     if (user?.email) {
-      // dispatch(fetchChatsRequest());
+      dispatch(fetchChatsRequest());
       dispatch(fetchGlobalChatroomsRequest());
     }
+  }, [dispatch, user?.email]);
+
+  // Polling for real-time updates
+  useEffect(() => {
+    if (!user?.email) return;
+    intervalRef.current = setInterval(() => {
+      dispatch(fetchChatsRequest());
+      dispatch(fetchGlobalChatroomsRequest());
+    }, 5000); // every 5 seconds
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, [dispatch, user?.email]);
 
   useFocusEffect(
     useCallback(() => {
       if (user?.email) {
-        // dispatch(fetchChatsRequest());
+        dispatch(fetchChatsRequest());
         dispatch(fetchGlobalChatroomsRequest());
       }
     }, [dispatch, user?.email]),
@@ -63,7 +114,13 @@ const ChatListScreen: React.FC<Props> = ({ navigation }) => {
           onPress={() => {
             Alert.alert('Logout', 'Are you sure you want to logout?', [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Logout', onPress: () => dispatch(logout()) },
+              {
+                text: 'Logout',
+                onPress: () => {
+                  dispatch(logout());
+                  navigation.replace('Login');
+                },
+              },
             ]);
           }}
         >
@@ -75,112 +132,135 @@ const ChatListScreen: React.FC<Props> = ({ navigation }) => {
 
   const onRefresh = useCallback(() => {
     if (user?.email) {
-      // dispatch(fetchChatsRequest());
+      dispatch(fetchChatsRequest());
       dispatch(fetchGlobalChatroomsRequest());
     }
   }, [dispatch, user?.email]);
 
-  const handleChatPress = (chat: Chat) => {
-    navigation.navigate('ChatRoom', {
-      chatId: chat.id,
-      contactName: chat.contactName,
-    });
-  };
+  const handleChatPress = useCallback(
+    (chat: Chat) => {
+      navigation.navigate('ChatRoom', {
+        chatId: chat.id,
+        contactName: chat.contactName,
+      });
+    },
+    [navigation],
+  );
 
-  const formatTime = (timestamp: number) => {
+  // WhatsApp-style time formatting
+  const formatTime = useCallback((timestamp: number) => {
     const now = new Date();
     const messageTime = new Date(timestamp);
-    const diffInHours =
-      (now.getTime() - messageTime.getTime()) / (1000 * 60 * 60);
+    const diffInMs = now.getTime() - messageTime.getTime();
+    const diffInMinutes = diffInMs / (1000 * 60);
+    const diffInHours = diffInMs / (1000 * 60 * 60);
+    const diffInDays = diffInMs / (1000 * 60 * 60 * 24);
 
-    if (diffInHours < 1) return 'now';
+    if (diffInMinutes < 1) return 'now';
+    if (diffInHours < 1) return `${Math.floor(diffInMinutes)} min ago`;
     if (diffInHours < 24) {
       return messageTime.toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit',
       });
     }
-    if (diffInHours < 48) return 'Yesterday';
+    if (diffInDays < 2) return 'yesterday';
     return messageTime.toLocaleDateString();
-  };
+  }, []);
 
-  const renderChatItem = ({ item }: { item: Chat }) => (
-    <TouchableOpacity
-      style={styles.chatItem}
-      onPress={() => handleChatPress(item)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.avatarContainer}>
-        <Text style={styles.avatarText}>
-          {item.contactName?.charAt(0).toUpperCase() || '?'}
-        </Text>
-      </View>
-      <View style={styles.chatInfo}>
-        <View style={styles.chatHeader}>
-          <Text style={styles.contactName} numberOfLines={1}>
-            {item.contactName} {item.type === 'global' ? '🌍' : ''}
+  const renderChatItem = useCallback(
+    ({ item }: { item: Chat }) => (
+      <TouchableOpacity
+        style={styles.chatItem}
+        onPress={() => handleChatPress(item)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.avatarContainer}>
+          <Text style={styles.avatarText}>
+            {item.contactName?.charAt(0).toUpperCase() || '?'}
           </Text>
-          <Text style={styles.timestamp}>{formatTime(item.timestamp)}</Text>
         </View>
-        <View style={styles.messageContainer}>
-          <Text
-            style={[
-              styles.lastMessage,
-              item.unreadCount > 0 && styles.unreadMessage,
-            ]}
-            numberOfLines={1}
-          >
-            {item.lastMessage || 'No messages yet'}
-          </Text>
-          {item.unreadCount > 0 && (
-            <View style={styles.unreadBadge}>
-              <Text style={styles.unreadCount}>
-                {item.unreadCount > 99 ? '99+' : item.unreadCount}
-              </Text>
+        <View style={styles.chatInfo}>
+          <View style={styles.chatHeader}>
+            <Text style={styles.contactName} numberOfLines={1}>
+              {item.contactName} {item.type === 'global' ? '🌍' : ''}
+            </Text>
+            <Text style={styles.timestamp}>{formatTime(item.timestamp)}</Text>
+          </View>
+          <View style={styles.messageContainer}>
+            <Text
+              style={[
+                styles.lastMessage,
+                item.unreadCount > 0 && styles.unreadMessage,
+              ]}
+              numberOfLines={1}
+            >
+              {item.lastMessage || 'No messages yet'}
+            </Text>
+            <View style={styles.badgeContainer}>
+              {/* Unread message badge */}
+              {item.unreadCount > 0 && (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadCount}>
+                    {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                  </Text>
+                </View>
+              )}
+              {/* Pending message badge (when offline) */}
+              {!isConnected && item.pendingCount > 0 && (
+                <View style={styles.pendingBadge}>
+                  <Text style={styles.pendingCount}>
+                    {item.pendingCount > 99 ? '99+' : item.pendingCount}
+                  </Text>
+                </View>
+              )}
             </View>
-          )}
+          </View>
         </View>
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    ),
+    [handleChatPress, formatTime, isConnected],
   );
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyText}>No chats yet</Text>
-      <Text style={styles.emptySubtext}>
-        Start a conversation to see it here
-      </Text>
-      {/* {!isConnected && (
-        <Text style={styles.offlineEmptyText}>
-          You're offline. Chats will sync when connected.
+  const renderEmptyState = useCallback(
+    () => (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyText}>No chats yet</Text>
+        <Text style={styles.emptySubtext}>
+          Start a conversation to see it here
         </Text>
-      )} */}
-    </View>
+      </View>
+    ),
+    [],
   );
 
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="#075E54" barStyle="light-content" />
-      {/* {!isConnected && (
+
+      {/* Offline indicator */}
+      {!isConnected && (
         <View style={styles.offlineBar}>
           <Text style={styles.offlineText}>
-            No internet connection - Data may be outdated
+            📡 You're offline - Messages will be sent when connection is
+            restored
           </Text>
         </View>
-      )} */}
+      )}
+
       <View style={styles.header}>
         <Text style={styles.welcomeText}>
-          Welcome, {user?.username || 'Guest'}!
+          Welcome, {user?.displayName || user?.uid || 'Guest'}!
         </Text>
         <View style={styles.connectionStatus}>
           <View
             style={[
               styles.connectionDot,
-              // { backgroundColor: isConnected ? '#4CAF50' : '#f44336' },
+              { backgroundColor: isConnected ? '#25D366' : '#f44336' },
             ]}
           />
           <Text style={styles.connectionText}>
-            {/* {isConnected ? 'Online' : 'Offline'} */}
+            {isConnected ? 'Online' : 'Offline'}
           </Text>
         </View>
       </View>
@@ -279,6 +359,11 @@ const styles = StyleSheet.create({
   },
   lastMessage: { fontSize: 14, color: '#666', flex: 1 },
   unreadMessage: { color: '#333', fontWeight: '500' },
+  badgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   unreadBadge: {
     backgroundColor: '#25D366',
     borderRadius: 10,
@@ -289,6 +374,21 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   unreadCount: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+    paddingHorizontal: 4,
+  },
+  pendingBadge: {
+    backgroundColor: '#FF9800',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  pendingCount: {
     color: '#fff',
     fontSize: 10,
     fontWeight: 'bold',

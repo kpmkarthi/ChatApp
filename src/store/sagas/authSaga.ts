@@ -1,9 +1,6 @@
 import { call, put, takeLatest } from 'redux-saga/effects';
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-} from 'firebase/auth';
-import { ref, set, get } from 'firebase/database';
+import auth from '@react-native-firebase/auth';
+import { getDatabase } from '@react-native-firebase/database';
 
 import {
   loginRequest,
@@ -13,7 +10,7 @@ import {
   registerSuccess,
   registerFailure,
 } from '../slices/authSlice';
-import { auth, database } from '../../config/firebase';
+import { firebaseAuth, database } from '../../config/firebase';
 
 function* handleRegister(action: ReturnType<typeof registerRequest>) {
   {
@@ -22,8 +19,7 @@ function* handleRegister(action: ReturnType<typeof registerRequest>) {
   try {
     const { email, password, username } = action.payload;
     const userCredential = yield call(
-      createUserWithEmailAndPassword,
-      auth,
+      [auth(), 'createUserWithEmailAndPassword'],
       email,
       password,
     );
@@ -31,7 +27,7 @@ function* handleRegister(action: ReturnType<typeof registerRequest>) {
     const user = userCredential.user;
 
     // Save user info to Realtime Database
-    yield call(set, ref(database, `users/${user.uid}`), {
+    yield call([database.ref(`users/${user.uid}`), 'set'], {
       username,
       email,
       createdAt: new Date().toISOString(),
@@ -49,8 +45,7 @@ function* handleLogin(action: ReturnType<typeof loginRequest>) {
   try {
     const { email, password } = action.payload;
     const userCredential = yield call(
-      signInWithEmailAndPassword,
-      auth,
+      [auth(), 'signInWithEmailAndPassword'],
       email,
       password,
     );
@@ -58,7 +53,10 @@ function* handleLogin(action: ReturnType<typeof loginRequest>) {
     const user = userCredential.user;
 
     // Optionally fetch user profile from RTDB
-    const snapshot = yield call(get, ref(database, `users/${user.uid}`));
+    const snapshot = yield call(
+      [database.ref(`users/${user.uid}`), 'once'],
+      'value',
+    );
     const userProfile = snapshot.exists() ? snapshot.val() : {};
 
     yield put(loginSuccess({ user, profile: userProfile }));

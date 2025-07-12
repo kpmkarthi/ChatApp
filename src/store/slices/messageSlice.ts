@@ -5,7 +5,7 @@ export interface Message {
   text: string;
   senderId: string;
   timestamp: number;
-  status: 'sent' | 'failed';
+  status: 'sent' | 'failed' | 'pending';
   chatId: string;
 }
 
@@ -32,24 +32,38 @@ const messageSlice = createSlice({
       action: PayloadAction<{ chatId: string; text: string; senderId: string }>,
     ) => {
       const { chatId, text, senderId } = action.payload;
-      const tempMessage: Message = {
-        id: `local-${Date.now()}`,
+      const pendingMessage: Message = {
+        id: `pending_${Date.now()}_${Math.random()}`,
         text,
         senderId,
         timestamp: Date.now(),
-        status: 'sent',
+        status: 'pending',
         chatId,
       };
-      state.pendingMessages.push(tempMessage);
+
+      // Add to pending messages for offline tracking
+      state.pendingMessages.push(pendingMessage);
     },
     sendMessageSuccess: (
       state,
       action: PayloadAction<{ chatId: string; message: Message }>,
     ) => {
       const { chatId, message } = action.payload;
-      state.messages[chatId] = [...(state.messages[chatId] || []), message];
+      // Check if message already exists to prevent duplicates
+      const existingMessage = state.messages[chatId]?.find(
+        msg => msg.id === message.id,
+      );
+      if (!existingMessage) {
+        const currentMessages = state.messages[chatId] || [];
+        // Create a completely new messages object to avoid mutations
+        state.messages = {
+          ...state.messages,
+          [chatId]: [...currentMessages, message],
+        };
+      }
+      // Clean up pending messages
       state.pendingMessages = state.pendingMessages.filter(
-        msg => msg.id !== message.id,
+        msg => msg.id !== message.id && msg.text !== message.text,
       );
     },
     sendMessageFailure: (
@@ -65,7 +79,24 @@ const messageSlice = createSlice({
       state,
       action: PayloadAction<{ chatId: string; messages: Message[] }>,
     ) => {
-      state.messages[action.payload.chatId] = action.payload.messages;
+      const { chatId, messages } = action.payload;
+
+      // Create a completely new messages object to avoid mutations
+      state.messages = {
+        ...state.messages,
+        [chatId]: messages,
+      };
+
+      // Clean up pending messages that are now confirmed
+      state.pendingMessages = state.pendingMessages.filter(pendingMsg => {
+        return !messages.some(
+          confirmedMsg =>
+            confirmedMsg.text === pendingMsg.text &&
+            confirmedMsg.senderId === pendingMsg.senderId &&
+            Math.abs(confirmedMsg.timestamp - pendingMsg.timestamp) < 5000, // Within 5 seconds
+        );
+      });
+
       state.loading = false;
     },
     fetchMessagesFailure: (
@@ -85,6 +116,12 @@ const messageSlice = createSlice({
         // retry logic placeholder
       }
     },
+    clearPendingMessages: (state, action: PayloadAction<string>) => {
+      const chatId = action.payload;
+      state.pendingMessages = state.pendingMessages.filter(
+        msg => msg.chatId !== chatId,
+      );
+    },
   },
 });
 
@@ -96,6 +133,7 @@ export const {
   fetchMessagesSuccess,
   fetchMessagesFailure,
   retryFailedMessage,
+  clearPendingMessages,
 } = messageSlice.actions;
 
 export default messageSlice.reducer;

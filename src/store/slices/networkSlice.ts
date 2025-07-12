@@ -9,7 +9,7 @@ interface NetworkState {
 }
 
 const initialState: NetworkState = {
-  isConnected: true,
+  isConnected: false, // Start as false, will be updated by NetInfo
   isReconnecting: false,
   lastConnectionTime: null,
   connectionError: null,
